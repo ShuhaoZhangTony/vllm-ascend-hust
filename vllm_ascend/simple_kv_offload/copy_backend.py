@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import queue
 import threading
+from typing import TypeAlias
 
 import torch
 
@@ -21,6 +22,15 @@ from vllm_ascend.simple_kv_offload.npu_mem_ops import (
 )
 
 _SHUTDOWN_TIMEOUT_SECONDS = 5.0
+CopyJob: TypeAlias = tuple[
+    list[int],
+    list[int],
+    BatchMemcpyParams,
+    bool,
+    int,
+    list[tuple[int, torch.npu.Event]],
+    torch.npu.Event | None,
+]
 
 
 class NPUDmaCopyBackend:
@@ -39,7 +49,7 @@ class NPUDmaCopyBackend:
         self._load_stream: torch.npu.Stream | None = None
         self._store_stream: torch.npu.Stream | None = None
         self._device: torch.device | None = None
-        self._queue: queue.SimpleQueue | None = None
+        self._queue: queue.SimpleQueue[CopyJob | None] | None = None
         self._thread: threading.Thread | None = None
         self._state_lock = threading.Lock()
         self._shutdown_lock = threading.Lock()
@@ -58,7 +68,7 @@ class NPUDmaCopyBackend:
         # Stores go NPU->CPU (D2H), loads go CPU->NPU (H2D).
         store_params = build_params(npu_caches, cpu_caches, DIRECTION_D2H)
         load_params = build_params(cpu_caches, npu_caches, DIRECTION_H2D)
-        copy_queue = queue.SimpleQueue()
+        copy_queue: queue.SimpleQueue[CopyJob | None] = queue.SimpleQueue()
         copy_thread = threading.Thread(
             target=self._copy_loop,
             name="npu-kv-offload-copy",
