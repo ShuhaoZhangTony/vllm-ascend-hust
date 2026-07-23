@@ -9,6 +9,7 @@ import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
+import torch
 
 from vllm_ascend.simple_kv_offload.copy_backend import NPUDmaCopyBackend
 
@@ -27,7 +28,7 @@ def _make_backend() -> NPUDmaCopyBackend:
 def test_launch_copy_queues_wait_event() -> None:
     backend = _make_backend()
     wait_event = object()
-    events_list = []
+    events_list: list[tuple[int, torch.npu.Event]] = []
 
     backend.launch_copy([1], [2], True, 3, events_list, wait_event)
 
@@ -44,7 +45,8 @@ def test_launch_copy_queues_wait_event() -> None:
 
 def test_store_waits_for_compute_event_before_copy() -> None:
     backend = _make_backend()
-    backend._queue.put(([1], [2], object(), True, 3, events_list := [], wait_event := MagicMock()))
+    events_list: list[tuple[int, torch.npu.Event]] = []
+    backend._queue.put(([1], [2], object(), True, 3, events_list, wait_event := MagicMock()))
     backend._queue.put(None)
 
     order = []
@@ -117,7 +119,7 @@ def test_shutdown_drains_queued_and_inflight_copies() -> None:
     copy_started = threading.Event()
     release_copy = threading.Event()
     completion_events = [MagicMock(), MagicMock()]
-    recorded_events = []
+    recorded_events: list[tuple[int, torch.npu.Event]] = []
     copy_calls = []
 
     def blocking_copy(*args) -> None:
